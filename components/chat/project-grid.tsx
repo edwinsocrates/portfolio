@@ -7,23 +7,52 @@ interface ProjectGridProps {
 
 export function ProjectGrid({ onProjectClick }: ProjectGridProps) {
   return (
-    <section>
-      {/* DESIGN.md overline: 10px, Stone Gray, 0.5px tracking, uppercase */}
-      <p
-        className="mb-6 text-[10px] font-medium uppercase"
-        style={{ color: "#87867f", letterSpacing: "0.5px" }}
+    <section id="work">
+      {/* Header row */}
+      <div
+        className="mb-10 flex items-baseline justify-between flex-wrap gap-2"
       >
-        Selected Work
-      </p>
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-        {projects.map((project) => (
+        <h2
+          style={{
+            fontSize: 48,
+            fontWeight: 400,
+            lineHeight: 0.95,
+            color: "#ffffff",
+            margin: 0,
+          }}
+        >
+          Selected Work
+        </h2>
+        <span
+          className="font-mono text-[12px] uppercase tracking-[0.5px]"
+          style={{ color: "#fa520f" }}
+        >
+          01 — {String(projects.length).padStart(2, "0")}
+        </span>
+      </div>
+      <div
+        className="grid gap-5"
+        style={{
+          gridTemplateColumns: "repeat(3, 1fr)",
+        }}
+      >
+        {projects.map((project, index) => (
           <LandingProjectCard
             key={project.slug}
             project={project}
+            index={index}
             onClick={onProjectClick}
           />
         ))}
       </div>
+      <style>{`
+        @media (max-width: 860px) {
+          section#work > div:last-child { grid-template-columns: repeat(2, 1fr) !important; }
+        }
+        @media (max-width: 560px) {
+          section#work > div:last-child { grid-template-columns: 1fr !important; }
+        }
+      `}</style>
     </section>
   )
 }

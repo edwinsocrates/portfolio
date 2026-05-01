@@ -49,42 +49,46 @@ export function ChatInput({
         placeholder={placeholder}
         rows={1}
         disabled={isLoading}
-        className="w-full resize-none rounded-xl py-3.5 pl-4 pr-12 text-[15px] leading-[1.6] focus:outline-none disabled:opacity-50 transition-shadow"
+        className="w-full resize-none py-5 pl-5 pr-14 text-[16px] leading-[1.5] focus:outline-none disabled:opacity-50 transition-shadow"
         style={{
-          background: "#ffffff",
-          color: "#141413",
-          caretColor: "#141413",
-          boxShadow: "0px 0px 0px 1px #e8e6dc, rgba(0,0,0,0.04) 0px 2px 8px",
+          background: "#1a1a1a",
+          color: "#ffffff",
+          caretColor: "#fa520f",
+          boxShadow: "rgba(250, 82, 15, 0.08) 0px 4px 24px",
         }}
         onFocus={(e) => {
           e.currentTarget.style.boxShadow =
-            "0px 0px 0px 1px #3898ec, 0px 0px 0px 3px rgba(56, 152, 236, 0.12), rgba(0,0,0,0.04) 0px 2px 8px"
+            "0 0 0 2px #fa520f, rgba(250, 82, 15, 0.15) 0px 8px 32px"
         }}
         onBlur={(e) => {
           e.currentTarget.style.boxShadow =
-            "0px 0px 0px 1px #e8e6dc, rgba(0,0,0,0.04) 0px 2px 8px"
+            "rgba(250, 82, 15, 0.08) 0px 4px 24px"
         }}
-        placeholder-style="color: #87867f"
         aria-label="Chat input"
       />
-      {/* placeholder color via CSS */}
-      <style>{`textarea::placeholder { color: #87867f; }`}</style>
+      <style>{`textarea::placeholder { color: #787878; }`}</style>
       <button
         type="button"
         onClick={onSubmit}
         disabled={!canSubmit}
         aria-label="Send message"
-        className="absolute right-2.5 bottom-2.5 flex h-8 w-8 items-center justify-center rounded-lg transition-all disabled:opacity-30"
+        className="absolute right-3 bottom-3 flex h-11 items-center justify-center gap-2 px-4 transition-all disabled:opacity-30 uppercase tracking-[0.5px]"
         style={{
-          background: canSubmit ? "#c96442" : "#e8e6dc",
-          boxShadow: canSubmit
-            ? "0px 0px 0px 1px rgba(201, 100, 66, 0.5)"
-            : "none",
+          background: canSubmit ? "#fa520f" : "#262626",
         }}
       >
+        <span
+          style={{
+            fontSize: 12,
+            fontWeight: 400,
+            color: "#ffffff",
+          }}
+        >
+          Send
+        </span>
         <ArrowUp
           className="h-4 w-4"
-          style={{ color: canSubmit ? "#faf9f5" : "#87867f" }}
+          style={{ color: "#ffffff" }}
         />
       </button>
     </div>

@@ -1,24 +1,31 @@
 "use client"
 
-import React, { useState, useRef, useEffect } from "react"
+import React, { useState, useRef, useEffect, useCallback } from "react"
 import { useChat } from "@ai-sdk/react"
 import { DefaultChatTransport } from "ai"
 import { ArrowLeft } from "lucide-react"
 import { SpiralMark } from "@/components/spiral-mark"
 import { ChatInput } from "@/components/chat/chat-input"
-import { MessageBubble } from "@/components/chat/message-bubble"
-import { ProjectCard } from "@/components/chat/project-card"
-import { DocCard } from "@/components/chat/doc-card"
 import { ProjectGrid } from "@/components/chat/project-grid"
-import { useMessageCards } from "@/hooks/use-message-cards"
-import { getProjectBySlug } from "@/lib/projects"
+import { SideOfDesk } from "@/components/chat/side-of-desk"
+import { NowPlaying } from "@/components/chat/now-playing"
 import { DOCS } from "@/lib/constants"
+import {
+  buildResponse,
+  INTRO_SEQUENCE,
+  type MessageTemplate,
+} from "@/lib/scripted-responses"
+import {
+  AssistantBubble,
+  UserBubble,
+  TypingIndicator,
+  type StructuredMessage,
+} from "@/components/chat/message-bubbles"
 
 const PROMPT_CHIPS = [
-  "What are you building at FutureFit AI?",
-  "Tell me about the Meridian project",
-  "How do you approach stakeholder pushback?",
-  "Show me your resume",
+  "Walk me through your work",
+  "How do you design with AI?",
+  "Show me your résumé",
 ] as const
 
 type Mode = "landing" | "chat"
@@ -27,108 +34,317 @@ function createTransport() {
   return new DefaultChatTransport({ api: "/api/chat" })
 }
 
+// Typing delay ranges (ms)
+const TYPING_DELAY = { min: 400, max: 900 }
+
+function getTypingDelay() {
+  return Math.random() * (TYPING_DELAY.max - TYPING_DELAY.min) + TYPING_DELAY.min
+}
+
+let messageIdCounter = 0
+function generateId() {
+  return `msg-${++messageIdCounter}-${Date.now()}`
+}
+
 export default function HomePage() {
   const [mode, setMode] = useState<Mode>("landing")
-  const [pinnedSlug, setPinnedSlug] = useState<string | null>(null)
   const [input, setInput] = useState("")
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  const { messages, sendMessage, status, setMessages } = useChat({
+  // Structured messages for scripted flow
+  const [structuredMessages, setStructuredMessages] = useState<StructuredMessage[]>([])
+  const [isTyping, setIsTyping] = useState(false)
+  const [pendingMessages, setPendingMessages] = useState<MessageTemplate[]>([])
+
+  // Track if we've exhausted scripted responses and should use API
+  const [useApiMode, setUseApiMode] = useState(false)
+  // Track how many messages in apiMessages are history (shouldn't be rendered)
+  const [apiHistoryCount, setApiHistoryCount] = useState(0)
+  // Track current project being discussed (to avoid repeating scripted reveals)
+  const [currentProjectSlug, setCurrentProjectSlug] = useState<string | null>(null)
+
+  // Claude API chat (for when scripted responses don't match)
+  const { messages: apiMessages, sendMessage, status, setMessages: setApiMessages } = useChat({
     transport: createTransport(),
   })
 
-  const isLoading = status === "streaming" || status === "submitted"
-  const { projectCards, docCards } = useMessageCards(messages)
+  const isApiLoading = status === "streaming" || status === "submitted"
 
+  // Scroll to bottom on new messages
   useEffect(() => {
     if (mode === "chat") {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
     }
-  }, [messages, mode])
+  }, [structuredMessages, apiMessages, isTyping, mode])
 
-  function handleProjectClick(slug: string) {
-    const project = getProjectBySlug(slug)
-    if (!project) return
-    setPinnedSlug(slug)
+  // Process pending scripted messages with typing delays
+  useEffect(() => {
+    if (pendingMessages.length === 0 || isTyping) return
+
+    const processNext = async () => {
+      setIsTyping(true)
+      await new Promise((r) => setTimeout(r, getTypingDelay()))
+
+      const [next, ...rest] = pendingMessages
+      const newMessage: StructuredMessage = {
+        id: generateId(),
+        role: "assistant",
+        firstOfStreak: structuredMessages.length === 0 ||
+          structuredMessages[structuredMessages.length - 1]?.role === "user",
+        ...next,
+      } as StructuredMessage
+
+      setStructuredMessages((prev) => {
+        // Mark previous messages as not first of streak if needed
+        const updated = [...prev]
+        if (updated.length > 0 && updated[updated.length - 1].role === "assistant") {
+          // This is a continuation, don't show avatar
+          newMessage.firstOfStreak = false
+        }
+        return [...updated, newMessage]
+      })
+      setPendingMessages(rest)
+      setIsTyping(false)
+    }
+
+    processNext()
+  }, [pendingMessages, isTyping, structuredMessages])
+
+  // Queue scripted messages
+  const queueScriptedMessages = useCallback((templates: MessageTemplate[]) => {
+    setPendingMessages(templates)
+  }, [])
+
+  // Build conversation history from structured messages for API context
+  // Convert all message types to text so API understands the project context
+  const buildApiHistory = useCallback(() => {
+    const history: { id: string; role: "user" | "assistant"; content: string }[] = []
+
+    for (const m of structuredMessages) {
+      let content = ""
+
+      switch (m.kind) {
+        case "text":
+          content = (m as { text: string }).text
+          break
+        case "project-header": {
+          const p = (m as { project: { client: string; projectTitle: string; role: string } }).project
+          content = `[Currently discussing: ${p.client} — ${p.projectTitle}. Edwin's role: ${p.role}]`
+          break
+        }
+        case "impact": {
+          const items = (m as { items: string[] }).items
+          content = `Impact: ${items.join("; ")}`
+          break
+        }
+        case "followups": {
+          const text = (m as { text?: string }).text
+          if (text) content = text
+          break
+        }
+        // Skip image and image-row as they don't add conversational context
+        default:
+          continue
+      }
+
+      if (content) {
+        history.push({
+          id: m.id,
+          role: m.role as "user" | "assistant",
+          content,
+        })
+      }
+    }
+
+    return history
+  }, [structuredMessages])
+
+  // Handle user input
+  const handleSend = useCallback(() => {
+    if (!input.trim() || isTyping || isApiLoading) return
+
+    const userText = input.trim()
+    setInput("")
     setMode("chat")
-    sendMessage({
-      text: `Tell me about the ${project.projectTitle} project at ${project.client}.`,
+
+    // Add user message
+    const userMessage: StructuredMessage = {
+      id: generateId(),
+      role: "user",
+      kind: "text",
+      text: userText,
+      firstOfStreak: true,
+    } as StructuredMessage & { kind: "text"; text: string }
+
+    setStructuredMessages((prev) => [...prev, userMessage])
+
+    // Try to get a scripted response
+    const { response, projectSlug } = buildResponse(userText, { currentProjectSlug })
+
+    if (response) {
+      queueScriptedMessages(response)
+      if (projectSlug) setCurrentProjectSlug(projectSlug)
+    } else {
+      // Fall back to Claude API - sync conversation history first
+      setUseApiMode(true)
+      const history = buildApiHistory()
+      // Track history count so we don't render these (already shown in structuredMessages)
+      // +1 for the user message we're about to send
+      setApiHistoryCount(history.length + 1)
+      // Set history then send new message
+      setApiMessages(history)
+      // Small delay to ensure state is updated before sending
+      setTimeout(() => {
+        sendMessage({ text: userText })
+      }, 0)
+    }
+  }, [input, isTyping, isApiLoading, queueScriptedMessages, sendMessage, buildApiHistory, setApiMessages, currentProjectSlug])
+
+  // Handle chip selection
+  const handleChipSelect = useCallback((text: string) => {
+    setMode("chat")
+
+    // Add user message
+    const userMessage: StructuredMessage = {
+      id: generateId(),
+      role: "user",
+      kind: "text",
+      text: text,
+      firstOfStreak: true,
+    } as StructuredMessage & { kind: "text"; text: string }
+
+    setStructuredMessages((prev) => [...prev, userMessage])
+
+    // Get scripted response
+    const { response, projectSlug } = buildResponse(text, { currentProjectSlug })
+    if (response) {
+      queueScriptedMessages(response)
+      if (projectSlug) setCurrentProjectSlug(projectSlug)
+    }
+  }, [queueScriptedMessages, currentProjectSlug])
+
+  // Handle followup chip clicks
+  const handleFollowupChip = useCallback((chip: { text: string; slug?: string }) => {
+    // Add user message
+    const userMessage: StructuredMessage = {
+      id: generateId(),
+      role: "user",
+      kind: "text",
+      text: chip.text,
+      firstOfStreak: true,
+    } as StructuredMessage & { kind: "text"; text: string }
+
+    setStructuredMessages((prev) => [...prev, userMessage])
+
+    // Get scripted response (with optional slug for project-specific)
+    const { response, projectSlug } = buildResponse(chip.text, {
+      preloadedSlug: chip.slug,
+      currentProjectSlug,
     })
-  }
+    if (response) {
+      queueScriptedMessages(response)
+      if (projectSlug) setCurrentProjectSlug(projectSlug)
+    } else {
+      // Fall back to API - sync conversation history first
+      setUseApiMode(true)
+      const history = buildApiHistory()
+      // Track history count so we don't render these (+1 for user message)
+      setApiHistoryCount(history.length + 1)
+      setApiMessages(history)
+      setTimeout(() => {
+        sendMessage({ text: chip.text })
+      }, 0)
+    }
+  }, [queueScriptedMessages, sendMessage, buildApiHistory, setApiMessages, currentProjectSlug])
 
-  function handleSend() {
-    if (!input.trim() || isLoading) return
+  // Handle project click from grid
+  const handleProjectClick = useCallback((slug: string) => {
     setMode("chat")
-    setPinnedSlug(null)
-    sendMessage({ text: input })
-    setInput("")
-  }
 
-  function handleChipSelect(text: string) {
-    setMode("chat")
-    setPinnedSlug(null)
-    sendMessage({ text })
-  }
+    // Get project-specific response
+    const { response, projectSlug } = buildResponse("", { preloadedSlug: slug })
+    if (response) {
+      queueScriptedMessages(response)
+      if (projectSlug) setCurrentProjectSlug(projectSlug)
+    }
+  }, [queueScriptedMessages])
 
-  function handleBack() {
+  // Handle back button
+  const handleBack = useCallback(() => {
     setMode("landing")
-    setPinnedSlug(null)
     setInput("")
-    setMessages([])
-  }
+    setStructuredMessages([])
+    setPendingMessages([])
+    setApiMessages([])
+    setUseApiMode(false)
+    setApiHistoryCount(0)
+    setCurrentProjectSlug(null)
+  }, [setApiMessages])
 
-  const displayMessages = pinnedSlug
-    ? messages.filter((m, i) => !(m.role === "user" && i === 0))
-    : messages
+  // Find last assistant message index for followup chip activation
+  const lastAssistantIdx = structuredMessages.reduce(
+    (acc, m, i) => (m.role === "assistant" ? i : acc),
+    -1
+  )
 
   /* ── LANDING ──────────────────────────────────────────────── */
   if (mode === "landing") {
     return (
-      <div className="min-h-dvh overflow-y-auto bg-bg">
-
-        {/* Hero section — Parchment canvas */}
-        <div className="mx-auto max-w-2xl px-6 pt-16 pb-12">
-
+      <div className="min-h-dvh overflow-y-auto" style={{ background: "#0f0f0f" }}>
+        {/* Hero section — Dark canvas */}
+        <div className="mx-auto max-w-7xl px-6 pt-16 pb-16">
           {/* Top bar */}
           <div
-            className="mb-14 flex items-center justify-between animate-fade-in"
+            className="mb-20 flex items-center justify-between animate-fade-in"
             style={{ animationDelay: "0ms" }}
           >
-            <div className="flex items-center gap-2.5">
-              <SpiralMark size={20} />
+            <div className="flex items-center gap-3">
+              <SpiralMark size={24} />
               <span
-                className="text-[10px] font-medium tracking-[0.5px] uppercase"
-                style={{ color: "#87867f" }}
+                className="text-[11px] font-normal tracking-[0.5px] uppercase"
+                style={{ color: "#ffffff" }}
               >
                 EdwinOS
               </span>
               <span
-                className="rounded-full px-2.5 py-0.5 text-[10px] font-medium"
+                className="px-3 py-1 text-[11px] font-normal inline-flex items-center gap-2 uppercase"
                 style={{
-                  background: "rgba(201, 100, 66, 0.08)",
-                  color: "#c96442",
-                  boxShadow: "0px 0px 0px 1px rgba(201, 100, 66, 0.25)",
+                  background: "#1a1a1a",
+                  color: "#fa520f",
                 }}
               >
-                Assistant Running
+                <span
+                  className="animate-pulse"
+                  style={{
+                    width: 6,
+                    height: 6,
+                    background: "#fa520f",
+                  }}
+                />
+                Available
               </span>
             </div>
 
-            <nav className="flex items-center gap-5">
+            <nav className="flex items-center gap-6">
               {[
-                { label: "Portfolio", href: "https://www.edwinsocrates.com/portfolio" },
-                { label: "Case Study", href: DOCS["meridian-case-study"].url },
-                { label: "Resume",    href: DOCS["resume"].url },
+                { label: "WORK", href: "#work" },
+                { label: "AI", href: "#ai" },
+                { label: "CASE STUDY", href: DOCS["meridian-case-study"].url },
+                { label: "RESUME", href: DOCS["resume"].url },
               ].map(({ label, href }) => (
                 <a
                   key={label}
                   href={href}
-                  target="_blank"
+                  target={href.startsWith("#") ? undefined : "_blank"}
                   rel="noopener noreferrer"
-                  className="text-[15px] transition-colors"
-                  style={{ color: "#5e5d59" }}
-                  onMouseEnter={(e) => { e.currentTarget.style.color = "#141413" }}
-                  onMouseLeave={(e) => { e.currentTarget.style.color = "#5e5d59" }}
+                  className="text-[14px] tracking-[0.5px] transition-colors"
+                  style={{ color: "#b4b4b4" }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.color = "#fa520f"
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.color = "#b4b4b4"
+                  }}
                 >
                   {label}
                 </a>
@@ -136,44 +352,75 @@ export default function HomePage() {
             </nav>
           </div>
 
-          {/* Bio — serif headline, generous line-height */}
+          {/* Hero — Massive display typography */}
           <div
-            className="mb-10 animate-fade-in"
+            className="mb-16 animate-fade-in"
             style={{ animationDelay: "60ms" }}
           >
             <h1
-              className="font-serif mb-5 font-medium leading-[1.12] tracking-[-0.01em]"
-              style={{ fontSize: "2.5rem", color: "#141413" }}
+              className="mb-6"
+              style={{
+                fontSize: "clamp(36px, 5vw, 64px)",
+                fontWeight: 400,
+                lineHeight: 1.1,
+                letterSpacing: "-1px",
+                color: "#ffffff",
+              }}
             >
-              I&apos;m Edwin, a product designer interested in AI products and workflows.
+              I&apos;m Edwin, a product designer interested in{" "}
+              <span style={{ color: "#fa520f" }}>AI products and workflows</span>.
             </h1>
             <p
-              className="text-base leading-[1.65] max-w-[520px]"
-              style={{ color: "#5e5d59" }}
+              style={{
+                fontSize: 18,
+                lineHeight: 1.5,
+                color: "#b4b4b4",
+                maxWidth: 600,
+              }}
             >
-              Experience crafting user-centric products and systems that solve complex
-              problems. Adept at using human-centered design principles with business
-              goals to create impactful solutions.
+              I combine AI and design to create user-centric products and
+              systems that solve complex business problems.
             </p>
           </div>
 
-          {/* Input */}
+          {/* Input with callout label */}
           <div
-            className="mb-5 animate-fade-in"
+            className="mb-6 animate-fade-in relative"
             style={{ animationDelay: "100ms" }}
           >
+            <div
+              style={{
+                position: "absolute",
+                top: -14,
+                left: 16,
+                zIndex: 2,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "4px 12px",
+                background: "#fa520f",
+                color: "#ffffff",
+                fontSize: 10,
+                fontWeight: 400,
+                letterSpacing: "0.5px",
+                textTransform: "uppercase",
+              }}
+            >
+              <SpiralMark size={10} />
+              Ask my AI assistant
+            </div>
             <ChatInput
               value={input}
               onChange={setInput}
               onSubmit={handleSend}
-              isLoading={isLoading}
+              isLoading={isTyping}
               placeholder="Ask anything..."
             />
           </div>
 
-          {/* Prompt chips — Warm Sand, Charcoal text, ring warm */}
+          {/* Prompt chips — Dark surface, sharp corners */}
           <div
-            className="flex flex-wrap justify-center gap-2 animate-fade-in"
+            className="flex flex-wrap gap-2 animate-fade-in"
             style={{ animationDelay: "150ms" }}
           >
             {PROMPT_CHIPS.map((chip) => (
@@ -181,20 +428,17 @@ export default function HomePage() {
                 key={chip}
                 type="button"
                 onClick={() => handleChipSelect(chip)}
-                disabled={isLoading}
-                className="rounded-lg px-3.5 py-2 text-sm transition-all disabled:opacity-40"
+                disabled={isTyping}
+                className="px-4 py-3 text-[14px] transition-all disabled:opacity-40"
                 style={{
-                  background: "#e8e6dc",
-                  color: "#4d4c48",
-                  boxShadow: "0px 0px 0px 1px #d1cfc5",
+                  background: "#1a1a1a",
+                  color: "#ffffff",
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.boxShadow = "0px 0px 0px 1px #c2c0b6"
-                  e.currentTarget.style.background = "#dddbd0"
+                  e.currentTarget.style.background = "#262626"
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.boxShadow = "0px 0px 0px 1px #d1cfc5"
-                  e.currentTarget.style.background = "#e8e6dc"
+                  e.currentTarget.style.background = "#1a1a1a"
                 }}
               >
                 {chip}
@@ -203,46 +447,61 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Section divider — Border Cream */}
+        {/* Section divider */}
         <div
-          className="mx-auto max-w-4xl px-6"
-          style={{ borderTop: "1px solid #f0eee6" }}
+          className="mx-auto max-w-7xl px-6"
+          style={{ borderTop: "1px solid #333333" }}
         />
 
-        {/* Project grid — continues on Parchment */}
-        <div className="mx-auto max-w-4xl px-6 py-12 pb-24">
+        {/* Side of Desk section */}
+        <SideOfDesk />
+
+        {/* Section divider */}
+        <div
+          className="mx-auto max-w-7xl px-6"
+          style={{ borderTop: "1px solid #333333" }}
+        />
+
+        {/* Project grid */}
+        <div className="mx-auto max-w-7xl px-6 py-16">
           <ProjectGrid onProjectClick={handleProjectClick} />
         </div>
+
+        {/* Footer */}
+        <NowPlaying />
       </div>
     )
   }
 
   /* ── CHAT ─────────────────────────────────────────────────── */
   return (
-    <div className="flex h-dvh flex-col bg-bg">
-
+    <div className="flex h-dvh flex-col" style={{ background: "#0f0f0f" }}>
       {/* Header */}
       <header
-        className="flex h-12 shrink-0 items-center justify-between px-5"
-        style={{ borderBottom: "1px solid #f0eee6" }}
+        className="flex h-14 shrink-0 items-center justify-between px-5"
+        style={{ borderBottom: "1px solid #333333" }}
       >
         <button
           type="button"
           onClick={handleBack}
-          className="flex items-center gap-1.5 text-sm transition-colors"
-          style={{ color: "#5e5d59" }}
-          onMouseEnter={(e) => { e.currentTarget.style.color = "#141413" }}
-          onMouseLeave={(e) => { e.currentTarget.style.color = "#5e5d59" }}
+          className="flex items-center gap-2 text-[14px] transition-colors uppercase tracking-[0.5px]"
+          style={{ color: "#b4b4b4" }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = "#fa520f"
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = "#b4b4b4"
+          }}
         >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          All projects
+          <ArrowLeft className="h-4 w-4" />
+          Back
         </button>
 
         <div className="flex items-center gap-2">
-          <SpiralMark size={18} />
+          <SpiralMark size={20} />
           <span
-            className="text-[10px] font-medium tracking-[0.5px] uppercase"
-            style={{ color: "#87867f" }}
+            className="text-[11px] font-normal tracking-[0.5px] uppercase"
+            style={{ color: "#ffffff" }}
           >
             EdwinOS
           </span>
@@ -252,72 +511,96 @@ export default function HomePage() {
           href="https://www.edwinsocrates.com"
           target="_blank"
           rel="noopener noreferrer"
-          className="text-sm transition-colors"
-          style={{ color: "#5e5d59" }}
-          onMouseEnter={(e) => { e.currentTarget.style.color = "#141413" }}
-          onMouseLeave={(e) => { e.currentTarget.style.color = "#5e5d59" }}
+          className="text-[14px] transition-colors uppercase tracking-[0.5px]"
+          style={{ color: "#b4b4b4" }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = "#fa520f"
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = "#b4b4b4"
+          }}
         >
-          edwinsocrates.com ↗
+          Portfolio
         </a>
       </header>
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-2xl space-y-6 px-5 py-8">
-
-          {/* Pinned project card */}
-          {pinnedSlug && (
-            <div className="animate-slide-up">
-              <ProjectCard slug={pinnedSlug} />
-            </div>
-          )}
-
-          {/* Chat messages */}
-          {displayMessages.map((message, i) => {
-            const slugs = projectCards.get(message.id) ?? []
-            const docs = docCards.get(message.id) ?? []
-            const isLastMsg = i === displayMessages.length - 1
-            const isStreamingThisMsg =
-              isLastMsg && message.role === "assistant" && isLoading
-
-            return (
-              <React.Fragment key={message.id}>
-                <MessageBubble
-                  message={message}
-                  isStreaming={isStreamingThisMsg}
-                  hasProjectCards={slugs.length > 0}
-                  hasDocCards={docs.length > 0}
+        <div
+          style={{ maxWidth: 760, margin: "0 auto", padding: "32px 20px 8px" }}
+          className="flex flex-col gap-4"
+        >
+          {/* Structured messages (scripted) */}
+          {structuredMessages.map((message, i) => {
+            if (message.role === "user") {
+              return (
+                <UserBubble
+                  key={message.id}
+                  content={(message as StructuredMessage & { text: string }).text}
                 />
-
-                {docs.length > 0 && (
-                  <div className="space-y-2">
-                    {docs.map((docKey) => (
-                      <DocCard key={docKey} docKey={docKey} />
-                    ))}
-                  </div>
-                )}
-              </React.Fragment>
+              )
+            }
+            return (
+              <AssistantBubble
+                key={message.id}
+                message={message}
+                onChipPick={handleFollowupChip}
+                isLastAssistant={i === lastAssistantIdx}
+              />
             )
           })}
 
+          {/* API messages (when scripted doesn't match) - only show NEW messages, not history */}
+          {useApiMode &&
+            apiMessages.slice(apiHistoryCount).map((message, idx) => {
+              if (message.role === "user") {
+                return null // Already shown in structured messages
+              }
+              // Convert API message to text bubble
+              // Handle both string content and parts array (AI SDK v5)
+              let textContent = ""
+              if (typeof message.content === "string") {
+                textContent = message.content
+              } else if (Array.isArray(message.content)) {
+                textContent = message.content
+                  .filter((p) => p.type === "text")
+                  .map((p) => (p as { type: "text"; text: string }).text)
+                  .join("")
+              } else if ("parts" in message && Array.isArray((message as { parts?: unknown[] }).parts)) {
+                textContent = ((message as { parts: { type: string; text?: string }[] }).parts)
+                  .filter((p) => p.type === "text" && p.text)
+                  .map((p) => p.text!)
+                  .join("")
+              }
+
+              // Don't render empty messages
+              if (!textContent) return null
+
+              const isLast = idx === apiMessages.slice(apiHistoryCount).length - 1
+
+              return (
+                <AssistantBubble
+                  key={message.id}
+                  message={{
+                    id: message.id,
+                    role: "assistant",
+                    kind: "text",
+                    text: textContent,
+                    firstOfStreak: true,
+                  }}
+                  isLastAssistant={isLast}
+                />
+              )
+            })}
+
           {/* Typing indicator */}
-          {isLoading && messages[messages.length - 1]?.role === "user" && (
-            <div className="flex items-center gap-3">
-              <SpiralMark size={20} />
-              <div className="flex gap-1.5">
-                {[0, 150, 300].map((delay) => (
-                  <span
-                    key={delay}
-                    className="h-1.5 w-1.5 rounded-full animate-pulse"
-                    style={{
-                      background: "#c96442",
-                      opacity: 0.5,
-                      animationDelay: `${delay}ms`,
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
+          {(isTyping || (useApiMode && isApiLoading)) && (
+            <TypingIndicator
+              showAvatar={
+                structuredMessages.length === 0 ||
+                structuredMessages[structuredMessages.length - 1]?.role === "user"
+              }
+            />
           )}
 
           <div ref={messagesEndRef} />
@@ -326,22 +609,25 @@ export default function HomePage() {
 
       {/* Bottom input */}
       <div
-        className="px-5 pb-6 pt-3"
-        style={{ borderTop: "1px solid #f0eee6" }}
+        className="px-5 pb-6 pt-4"
+        style={{
+          borderTop: "1px solid #333333",
+          background: "#1a1a1a",
+        }}
       >
-        <div className="mx-auto w-full max-w-2xl">
+        <div style={{ maxWidth: 760, margin: "0 auto" }}>
           <ChatInput
             value={input}
             onChange={setInput}
             onSubmit={handleSend}
-            isLoading={isLoading}
-            placeholder={pinnedSlug ? "Ask a follow-up..." : "Ask anything..."}
+            isLoading={isTyping || isApiLoading}
+            placeholder="Ask a follow-up..."
           />
           <p
-            className="mt-2.5 text-center text-[11px]"
-            style={{ color: "#87867f" }}
+            className="mt-3 text-center text-[12px] uppercase tracking-[0.5px]"
+            style={{ color: "#787878" }}
           >
-            edwinsocrates.com · AI may make mistakes
+            edwinsocrates.com
           </p>
         </div>
       </div>

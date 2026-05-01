@@ -2,35 +2,42 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── DESIGN.md Light Palette ──────────────────────────────────── */
+/* ── Mistral AI Inspired Dark Palette ────────────────────────────── */
 :root {
-  --color-bg:           245 244 237;  /* #f5f4ed — Parchment              */
-  --color-surface:      250 249 245;  /* #faf9f5 — Ivory                  */
-  --color-surface-2:    232 230 220;  /* #e8e6dc — Warm Sand              */
-  --color-accent:       201 100  66;  /* #c96442 — Terracotta Brand       */
-  --color-accent-2:     217 119  87;  /* #d97757 — Coral Accent           */
-  --color-ink:           20  20  19;  /* #141413 — Near Black             */
-  --color-subtle:        94  93  89;  /* #5e5d59 — Olive Gray             */
-  --color-muted:        135 134 127;  /* #87867f — Stone Gray             */
-  --color-charcoal:      77  76  72;  /* #4d4c48 — Charcoal Warm         */
-  --color-user-bubble:  255 255 255;  /* #ffffff — Pure White (user msg)  */
+  /* Primary */
+  --mistral-orange:     250 82 15;    /* #fa520f — Core brand orange */
+  --mistral-flame:      251 100 36;   /* #fb6424 — Warmer variant */
+  --block-orange:       255 129 5;    /* #ff8105 — Pure orange */
 
-  /* ── Named border colors ──────────────────────────────────── */
-  --border-cream:       #f0eee6;      /* Border Cream — standard light    */
-  --border-warm:        #e8e6dc;      /* Border Warm — prominent          */
+  /* Sunshine Scale */
+  --sunshine-900:       255 138 0;    /* #ff8a00 — Deep amber */
+  --sunshine-700:       255 161 16;   /* #ffa110 — Core amber */
+  --sunshine-500:       255 184 62;   /* #ffb83e — Medium gold */
+  --sunshine-300:       255 208 106;  /* #ffd06a — Light gold */
+  --block-gold:         255 226 149;  /* #ffe295 — Pale gold */
+  --bright-yellow:      255 217 0;    /* #ffd900 — Brightest */
 
-  /* ── Ring shadow system (DESIGN.md) ─────────────────────────── */
-  --ring-warm:          0px 0px 0px 1px #d1cfc5;
-  --ring-deep:          0px 0px 0px 1px #c2c0b6;
-  --ring-terracotta:    0px 0px 0px 1px rgba(201, 100, 66, 0.35);
-  --ring-focus-blue:    0px 0px 0px 1px #3898ec,
-                        0px 0px 0px 3px rgba(56, 152, 236, 0.15);
-  --shadow-whisper:     rgba(0, 0, 0, 0.05) 0px 4px 24px;
-}
+  /* Dark Surfaces */
+  --dark-bg:            15 15 15;     /* #0f0f0f — Deepest background */
+  --dark-surface:       26 26 26;     /* #1a1a1a — Card background */
+  --dark-surface-2:     38 38 38;     /* #262626 — Elevated surface */
+  --dark-border:        51 51 51;     /* #333333 — Subtle borders */
 
-/* ── Serif font (DESIGN.md: Anthropic Serif → Georgia) ────────── */
-.font-serif {
-  font-family: Georgia, "Times New Roman", serif;
+  /* Text on dark */
+  --text-primary:       255 255 255;  /* #ffffff — Primary text */
+  --text-secondary:     180 180 180;  /* #b4b4b4 — Secondary text */
+  --text-muted:         120 120 120;  /* #787878 — Muted text */
+
+  /* Semantic mappings */
+  --color-bg:           var(--dark-bg);
+  --color-surface:      var(--dark-surface);
+  --color-accent:       var(--mistral-orange);
+  --color-ink:          var(--text-primary);
+
+  /* Dark mode shadow system - subtle warm glow */
+  --golden-shadow:
+    rgba(250, 82, 15, 0.08) 0px 4px 24px,
+    rgba(250, 82, 15, 0.04) 0px 8px 48px;
 }
 
 /* ── Base ─────────────────────────────────────────────────────── */
@@ -46,9 +53,10 @@ html {
 }
 
 body {
-  background-color: rgb(var(--color-bg));
-  color: rgb(var(--color-ink));
+  background-color: #0f0f0f;
+  color: #ffffff;
   margin: 0;
+  font-family: Arial, ui-sans-serif, system-ui, -apple-system, sans-serif;
 }
 
 /* ── Custom scrollbar ─────────────────────────────────────────── */
@@ -61,18 +69,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(var(--color-accent), 0.25);
-  border-radius: 2px;
+  background: rgba(250, 82, 15, 0.4);
+  border-radius: 0;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(var(--color-accent), 0.45);
-}
-
-/* ── Cursor blink for streaming ───────────────────────────────── */
-@keyframes cursor-blink {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0; }
+  background: rgba(250, 82, 15, 0.6);
 }
 
 /* ── Animations ───────────────────────────────────────────────── */
@@ -86,7 +88,61 @@ body {
   to   { opacity: 1; transform: translateY(0);   }
 }
 
-/* ── Tailwind animation utilities ─────────────────────────────── */
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
 .animate-cursor-blink { animation: cursor-blink 1s steps(1) infinite; }
-.animate-fade-in      { animation: fade-in 0.35s ease-out both;        }
-.animate-slide-up     { animation: slide-up 0.3s ease-out both;        }
+.animate-fade-in      { animation: fade-in 0.35s ease-out both; }
+.animate-slide-up     { animation: slide-up 0.3s ease-out both; }
+
+/* ── Mistral Typography ───────────────────────────────────────── */
+.text-display {
+  font-size: 82px;
+  font-weight: 400;
+  line-height: 1.0;
+  letter-spacing: -2.05px;
+}
+
+.text-section {
+  font-size: 56px;
+  font-weight: 400;
+  line-height: 0.95;
+}
+
+.text-subsection {
+  font-size: 48px;
+  font-weight: 400;
+  line-height: 0.95;
+}
+
+.text-heading {
+  font-size: 32px;
+  font-weight: 400;
+  line-height: 1.15;
+}
+
+.text-card-title {
+  font-size: 30px;
+  font-weight: 400;
+  line-height: 1.20;
+}
+
+.text-feature {
+  font-size: 24px;
+  font-weight: 400;
+  line-height: 1.33;
+}
+
+/* ── Dark Mode Shadow Utilities ───────────────────────────────── */
+.shadow-golden {
+  box-shadow:
+    rgba(250, 82, 15, 0.12) 0px 4px 24px,
+    rgba(250, 82, 15, 0.06) 0px 8px 48px;
+}
+
+.shadow-golden-sm {
+  box-shadow:
+    rgba(250, 82, 15, 0.08) 0px 2px 12px;
+}

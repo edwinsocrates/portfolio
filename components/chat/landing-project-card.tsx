@@ -1,90 +1,223 @@
 "use client"
 
 import Image from "next/image"
+import { useState } from "react"
 import type { Project } from "@/lib/projects"
 
 interface LandingProjectCardProps {
   project: Project
+  index: number
   onClick: (slug: string) => void
 }
 
-export function LandingProjectCard({ project, onClick }: LandingProjectCardProps) {
+export function LandingProjectCard({ project, index, onClick }: LandingProjectCardProps) {
+  const [hover, setHover] = useState(false)
+  const isAiProject = project.tags.some(
+    (t) => t.toLowerCase() === "ai"
+  )
+
   return (
     <button
       type="button"
       onClick={() => onClick(project.slug)}
-      className="group w-full text-left overflow-hidden rounded-2xl transition-all duration-200"
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      className="w-full text-left overflow-hidden"
       style={{
-        background: "#faf9f5",
-        boxShadow:
-          "0px 0px 0px 1px #f0eee6, rgba(0,0,0,0.05) 0px 4px 24px",
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.boxShadow =
-          "0px 0px 0px 1px #d1cfc5, rgba(0,0,0,0.08) 0px 6px 28px"
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.boxShadow =
-          "0px 0px 0px 1px #f0eee6, rgba(0,0,0,0.05) 0px 4px 24px"
+        background: "#1a1a1a",
+        boxShadow: hover
+          ? "rgba(250, 82, 15, 0.15) 0px 8px 32px, rgba(250, 82, 15, 0.10) 0px 16px 48px"
+          : "rgba(250, 82, 15, 0.08) 0px 4px 16px",
+        transition: "all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1)",
+        display: "flex",
+        flexDirection: "column",
       }}
     >
-      {/* Cover image */}
-      <div className="relative aspect-video w-full overflow-hidden">
+      {/* Image area — 4:3 aspect */}
+      <div
+        style={{
+          position: "relative",
+          width: "100%",
+          aspectRatio: "4 / 3",
+          overflow: "hidden",
+          background: "#262626",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
         <Image
           src={project.previewImage.url}
           alt={project.previewImage.alt}
           fill
-          className="object-cover transition-transform duration-300 group-hover:scale-[1.02]"
-          sizes="(max-width: 768px) 100vw, 50vw"
+          className="object-contain p-[6%]"
+          style={{
+            transform: hover ? "scale(1.02)" : "scale(1)",
+            transition: "transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1)",
+            filter: "drop-shadow(0 8px 20px rgba(0, 0, 0, 0.4))",
+          }}
+          sizes="(max-width: 560px) 100vw, (max-width: 860px) 50vw, 33vw"
         />
+        {isAiProject && (
+          <div
+            style={{
+              position: "absolute",
+              top: 12,
+              left: 12,
+              padding: "4px 10px",
+              fontSize: 10,
+              fontWeight: 400,
+              letterSpacing: "0.5px",
+              textTransform: "uppercase",
+              background: "#1f1f1f",
+              color: "#ffffff",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            <span style={{ color: "#fa520f" }}>■</span> AI
+          </div>
+        )}
         {project.status === "wip" && (
           <div
-            className="absolute top-2.5 right-2.5 rounded-full px-2.5 py-0.5 text-[10px] font-medium"
             style={{
-              background: "rgba(245, 244, 237, 0.9)",
-              color: "#c96442",
-              boxShadow: "0px 0px 0px 1px rgba(201, 100, 66, 0.3)",
-              backdropFilter: "blur(6px)",
+              position: "absolute",
+              top: 12,
+              right: 12,
+              padding: "4px 10px",
+              fontSize: 10,
+              fontWeight: 400,
+              textTransform: "uppercase",
+              letterSpacing: "0.5px",
+              background: "#fa520f",
+              color: "#ffffff",
             }}
           >
             In progress
           </div>
         )}
+        <div
+          className="font-mono"
+          style={{
+            position: "absolute",
+            bottom: 12,
+            right: 12,
+            fontSize: 11,
+            color: "#fa520f",
+            fontWeight: 400,
+          }}
+        >
+          {String(index + 1).padStart(2, "0")}
+        </div>
       </div>
 
-      {/* Card footer */}
-      <div className="px-5 py-4">
-        <p
-          className="text-[11px] font-medium tracking-[0.1em] uppercase mb-1"
-          style={{ color: "#c96442" }}
+      {/* Body */}
+      <div
+        style={{
+          padding: "20px 24px 24px",
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
+          flex: 1,
+        }}
+      >
+        <span
+          style={{
+            fontSize: 10,
+            fontWeight: 400,
+            letterSpacing: "0.5px",
+            textTransform: "uppercase",
+            color: "#fa520f",
+          }}
         >
           {project.client}
-        </p>
-        <p
-          className="text-[14px] font-semibold mb-1.5 leading-snug"
-          style={{ color: "#141413" }}
+        </span>
+        <h3
+          style={{
+            fontSize: 20,
+            lineHeight: 1.2,
+            color: "#ffffff",
+            margin: 0,
+            fontWeight: 400,
+          }}
         >
           {project.projectTitle}
-        </p>
+        </h3>
         <p
-          className="text-[13px] leading-[1.6] line-clamp-2 mb-3"
-          style={{ color: "#5e5d59" }}
+          style={{
+            fontSize: 14,
+            lineHeight: 1.5,
+            color: "#b4b4b4",
+            margin: 0,
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
+          }}
         >
           {project.tagline}
         </p>
-        <div className="flex flex-wrap gap-1.5">
-          {project.tags.slice(0, 3).map((tag) => (
-            <span
-              key={tag}
-              className="rounded-full px-2.5 py-0.5 text-[11px]"
+        <div
+          style={{
+            marginTop: "auto",
+            paddingTop: 16,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: 8,
+          }}
+        >
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {project.tags.slice(0, 2).map((t) => (
+              <span
+                key={t}
+                style={{
+                  padding: "4px 10px",
+                  fontSize: 11,
+                  color: "#b4b4b4",
+                  background: "#262626",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.3px",
+                }}
+              >
+                {t}
+              </span>
+            ))}
+          </div>
+          <span
+            style={{
+              fontSize: 12,
+              color: hover ? "#fa520f" : "#ffffff",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              transition: "color 0.15s",
+              textTransform: "uppercase",
+              letterSpacing: "0.5px",
+            }}
+          >
+            View
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
               style={{
-                background: "#e8e6dc",
-                color: "#87867f",
+                transform: hover ? "translate(2px, -2px)" : "translate(0, 0)",
+                transition: "transform 0.2s",
               }}
             >
-              {tag}
-            </span>
-          ))}
+              <path
+                d="M7 17L17 7M17 7H9M17 7V15"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </span>
         </div>
       </div>
     </button>
